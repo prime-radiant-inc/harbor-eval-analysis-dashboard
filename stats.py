@@ -5,6 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+from data import resolve_state_dir
 from trajectory import build_trajectory
 
 
@@ -127,7 +128,7 @@ def _compute_api_stats(task_dir_path):
     Returns a dict with api_call_count, total_latency_ms, avg_latency_ms,
     and empty_response_count. All values are None if api.jsonl doesn't exist.
     """
-    api_file = Path(task_dir_path) / "agent" / "agent-state" / "api.jsonl"
+    api_file = resolve_state_dir(Path(task_dir_path)) / "api.jsonl"
     if not api_file.is_file():
         return {
             "api_call_count": None,
@@ -354,12 +355,13 @@ def _cache_key(job_dir):
     for task_dir in sorted(job_dir.iterdir()):
         if not task_dir.is_dir() or "__" not in task_dir.name:
             continue
-        sessions = task_dir / "agent" / "agent-state" / "sessions"
+        state_dir = resolve_state_dir(task_dir)
+        sessions = state_dir / "sessions"
         if sessions.is_dir():
             for f in sorted(sessions.iterdir()):
                 if f.suffix == ".jsonl":
                     mtimes.append(f"{f}:{f.stat().st_mtime_ns}")
-        api_log = task_dir / "agent" / "agent-state" / "api.jsonl"
+        api_log = state_dir / "api.jsonl"
         if api_log.is_file():
             mtimes.append(f"{api_log}:{api_log.stat().st_mtime_ns}")
         # Include reward.txt and result.json so cache invalidates when

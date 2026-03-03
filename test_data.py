@@ -252,6 +252,36 @@ class TestTaskStatus:
         assert tasks[0]["status"] == "running"
         assert tasks[0]["passed"] is False
 
+    def test_running_with_legacy_serf_state(self, tmp_path):
+        """Task using legacy serf-state dir name is still detected as running."""
+        job_root = tmp_path / "legacy-run"
+        task = job_root / "old-task__aaa111"
+        task.mkdir(parents=True)
+        sessions = task / "agent" / "serf-state" / "sessions"
+        sessions.mkdir(parents=True)
+        (sessions / "sess.transcript.jsonl").write_text(
+            json.dumps({"kind": "header", "format_version": 1,
+                         "session_id": "s1", "model": "x", "depth": 0}) + "\n")
+
+        store = RunStore(tmp_path)
+        tasks = store.list_tasks("legacy-run")
+        assert tasks[0]["status"] == "running"
+
+    def test_running_with_legacy_lace_state(self, tmp_path):
+        """Task using legacy lace-state dir name is still detected as running."""
+        job_root = tmp_path / "lace-run"
+        task = job_root / "lace-task__bbb222"
+        task.mkdir(parents=True)
+        sessions = task / "agent" / "lace-state" / "sessions"
+        sessions.mkdir(parents=True)
+        (sessions / "sess.transcript.jsonl").write_text(
+            json.dumps({"kind": "header", "format_version": 1,
+                         "session_id": "s1", "model": "x", "depth": 0}) + "\n")
+
+        store = RunStore(tmp_path)
+        tasks = store.list_tasks("lace-run")
+        assert tasks[0]["status"] == "running"
+
     def test_running_has_stdout(self, tmp_path):
         """Task with non-empty stdout but no reward is running."""
         job_root = tmp_path / "active-run"

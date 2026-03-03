@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import PlainTextResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from data import RunStore
+from data import RunStore, resolve_state_dir
 from stats import compute_run_stats, compute_task_stats, compute_task_history
 from trajectory import build_trajectory
 from markdown_render import render_run_list, render_run_detail, render_task_detail
@@ -154,7 +154,7 @@ def get_task(job_name: str, task_name: str, request: Request, trial: str = None)
                 test_stdout = task_path / "verifier" / "test-stdout.txt"
                 if test_stdout.is_file():
                     raw_files["verifier"] = str(rel / "verifier" / "test-stdout.txt")
-                state_dir = task_path / "agent" / "agent-state"
+                state_dir = resolve_state_dir(task_path)
                 if state_dir.is_dir():
                     for f in sorted(state_dir.glob("sessions/*.transcript.jsonl")):
                         raw_files.setdefault("transcripts", []).append(
@@ -162,7 +162,7 @@ def get_task(job_name: str, task_name: str, request: Request, trial: str = None)
                     api_log = state_dir / "api.jsonl"
                     if api_log.is_file():
                         raw_files["api_log"] = str(
-                            rel / "agent" / "agent-state" / "api.jsonl")
+                            rel / api_log.relative_to(task_path))
                 artifacts_dir = task_path / "agent" / "artifacts"
                 if artifacts_dir.is_dir():
                     raw_files["artifacts_base"] = str(

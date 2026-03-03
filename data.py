@@ -3,6 +3,21 @@
 import json
 from pathlib import Path
 
+# Preferred name first, then legacy names written by older serf/lace agents.
+_STATE_DIR_NAMES = ("agent-state", "serf-state", "lace-state")
+
+
+def resolve_state_dir(task_dir):
+    """Return the agent state directory inside a task, trying known names."""
+    agent_dir = task_dir / "agent"
+    for name in _STATE_DIR_NAMES:
+        candidate = agent_dir / name
+        if candidate.is_dir():
+            return candidate
+    # Nothing found — return the preferred name so callers get a consistent
+    # (non-existent) path rather than None.
+    return agent_dir / _STATE_DIR_NAMES[0]
+
 
 class RunStore:
     """Read-only access to harbor job data on disk.
@@ -344,7 +359,7 @@ class RunStore:
 
     def _find_transcript_files(self, task_dir):
         """Find all transcript JSONL files for a task."""
-        sessions_dir = task_dir / "agent" / "agent-state" / "sessions"
+        sessions_dir = resolve_state_dir(task_dir) / "sessions"
         if not sessions_dir.is_dir():
             return []
         return sorted(

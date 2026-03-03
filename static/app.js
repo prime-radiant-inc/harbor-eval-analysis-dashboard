@@ -157,6 +157,15 @@ function formatDate(isoStr) {
     } catch { return '-'; }
 }
 
+function formatDateTime(isoStr) {
+    if (!isoStr) return '-';
+    try {
+        const d = new Date(isoStr);
+        return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+            + ' ' + d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    } catch { return '-'; }
+}
+
 function formatTime(isoStr) {
     if (!isoStr) return '';
     try {
@@ -760,7 +769,7 @@ async function renderTaskHistory(container, taskName) {
                 case 'failure_category':
                     return document.createTextNode(failureCategoryLabel(entry.failure_category));
                 case 'task_started_at':
-                    return document.createTextNode(formatDate(entry.task_started_at));
+                    return document.createTextNode(formatDateTime(entry.task_started_at));
                 case 'total_rounds':
                     return document.createTextNode(String(entry.total_rounds || 0));
                 case 'wasted_rounds':
@@ -1105,7 +1114,7 @@ async function renderRunDetail(container, jobName) {
                 case 'failure_category':
                     return document.createTextNode(failureCategoryLabel(task.failure_category));
                 case 'started_at':
-                    return document.createTextNode(formatDate(task.started_at));
+                    return document.createTextNode(formatDateTime(task.started_at));
                 case 'total_rounds':
                     return document.createTextNode(String(task.total_rounds || 0));
                 case 'wasted_rounds':

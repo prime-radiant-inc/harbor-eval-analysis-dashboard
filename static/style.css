@@ -1038,6 +1038,16 @@ td.numeric {
 .status-dot.queued  { background: #9CA3AF; }
 .status-dot.partial { background: #F59E0B; }
 
+.trial-dots {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    flex-wrap: nowrap;
+}
+.trial-dots .status-dot {
+    margin-right: 0;
+}
+
 /* Multi-rep trial expand/collapse */
 .rep-toggle {
     display: inline-block;

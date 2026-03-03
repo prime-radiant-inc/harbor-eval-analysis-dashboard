@@ -866,12 +866,14 @@ async function renderRunDetail(container, jobName) {
                             h('span', { className: 'status-dot running' }),
                             'Running');
                     }
-                    if (task.trial_count > 1 && task.pass_count != null) {
-                        const dotClass = task.pass_count === task.trial_count ? 'pass'
-                            : task.pass_count === 0 ? 'fail' : 'partial';
-                        return h('span', { className: 'status-text' },
-                            h('span', { className: `status-dot ${dotClass}` }),
-                            `${task.pass_count}/${task.trial_count} Pass`);
+                    if (task.trial_count > 1 && task.trials) {
+                        const dots = task.trials.map(trial => {
+                            const cls = trial.status === 'running' ? 'running'
+                                : trial.status === 'queued' ? 'queued'
+                                : trial.passed ? 'pass' : 'fail';
+                            return h('span', { className: `status-dot ${cls}` });
+                        });
+                        return h('span', { className: 'trial-dots' }, ...dots);
                     }
                     const dotClass = task.passed ? 'pass' : failureDotClass(task.failure_category);
                     return h('span', { className: 'status-text' },

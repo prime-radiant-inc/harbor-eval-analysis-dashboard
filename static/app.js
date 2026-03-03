@@ -266,10 +266,11 @@ function getRunDimensionValue(run, dimension) {
     }
 }
 
-function sortRunsForGroup(runs) {
-    if (!groupByLevels.length) return runs;
+function sortRunsForGroup(runs, levels) {
+    const activeLevels = levels || groupByLevels;
+    if (!activeLevels.length) return runs;
     return [...runs].sort((a, b) => {
-        for (const dim of groupByLevels) {
+        for (const dim of activeLevels) {
             const va = getRunDimensionValue(a, dim);
             const vb = getRunDimensionValue(b, dim);
             if (va !== vb) {
@@ -605,6 +606,8 @@ function renderCompareResult(container, data) {
 // Task history page (one task across all runs)
 // ---------------------------------------------------------------------------
 
+let historyGroupByLevels = [];
+
 async function renderTaskHistory(container, taskName) {
     setBreadcrumb([
         { label: 'Dashboard', href: '#/' },
@@ -615,9 +618,37 @@ async function renderTaskHistory(container, taskName) {
     try {
         const history = await fetchJSON(`/api/tasks/${encodeURIComponent(taskName)}/history`);
 
+        // Group pills
+        const pillBar = h('span', { className: 'group-pills' });
+        const pillLabel = h('span', { className: 'group-pills-label' }, 'Group:');
+        pillBar.appendChild(pillLabel);
+        function rebuildPills() {
+            while (pillBar.children.length > 1) pillBar.removeChild(pillBar.lastChild);
+            for (const dim of GROUP_DIMENSIONS) {
+                const idx = historyGroupByLevels.indexOf(dim);
+                const active = idx >= 0;
+                const pill = h('button', {
+                    className: 'group-pill' + (active ? ' active' : ''),
+                    onClick: () => {
+                        if (active) {
+                            historyGroupByLevels = historyGroupByLevels.filter(d => d !== dim);
+                        } else {
+                            historyGroupByLevels = [...historyGroupByLevels, dim];
+                        }
+                        rebuildPills();
+                        renderTable();
+                    }
+                }, active ? `${idx + 1}. ${GROUP_LABELS[dim]}` : GROUP_LABELS[dim]);
+                pillBar.appendChild(pill);
+            }
+        }
+        rebuildPills();
+
         const header = h('div', { className: 'page-header' },
             h('h1', null, `${taskName}`),
-            h('div', { className: 'subtitle' }, `History across ${history.length} run${history.length !== 1 ? 's' : ''}`)
+            h('div', { className: 'subtitle' },
+                `History across ${history.length} run${history.length !== 1 ? 's' : ''}`,
+                pillBar)
         );
 
         if (!history.length) {
@@ -627,51 +658,233 @@ async function renderTaskHistory(container, taskName) {
             return;
         }
 
-        const thead = h('thead', null,
-            h('tr', null,
-                h('th', null, 'Run'),
-                h('th', null, 'Result'),
-                h('th', null, 'Category'),
-                h('th', null, 'Rounds'),
-                h('th', null, 'Wasted'),
-                h('th', null, 'Tokens'),
-                h('th', null, 'Wall Time')
-            )
-        );
+        // Filters
+        const allCount = history.length;
+        const passCount = history.filter(e => e.passed).length;
+        const failCount = history.filter(e => !e.passed).length;
+        const timeoutCount = history.filter(e => e.failure_category === 'timeout').length;
+        const wrongCount = history.filter(e => e.failure_category === 'wrong_answer').length;
+        const noSubmitCount = history.filter(e => e.failure_category === 'no_submit').length;
 
-        const tbody = h('tbody');
-        for (const entry of history) {
-            const dotClass = entry.passed ? 'pass' : failureDotClass(entry.failure_category);
-            const row = h('tr', null,
-                h('td', null,
-                    h('a', {
-                        className: 'table-link',
-                        href: `#/runs/${encodeURIComponent(entry.job_name)}/tasks/${encodeURIComponent(taskName)}`
-                    }, entry.job_name)
-                ),
-                h('td', null,
-                    h('span', { className: 'status-text' },
-                        h('span', { className: `status-dot ${dotClass}` }),
-                        entry.passed ? 'Pass' : 'Fail'
-                    )
-                ),
-                h('td', null, failureCategoryLabel(entry.failure_category)),
-                h('td', { className: 'numeric' }, String(entry.total_rounds || 0)),
-                h('td', { className: 'numeric' }, String(entry.wasted_rounds || 0)),
-                h('td', { className: 'numeric' }, formatTaskTokens(entry.total_tokens_in, entry.total_tokens_out)),
-                h('td', { className: 'numeric' }, formatWallTime(entry.wall_time_sec))
-            );
-            tbody.appendChild(row);
+        const filters = [
+            { key: 'all', label: 'All', count: allCount },
+            { key: 'pass', label: 'Pass', count: passCount },
+            { key: 'fail', label: 'Fail', count: failCount },
+            { key: 'timeout', label: 'Timeout', count: timeoutCount },
+            { key: 'wrong_answer', label: 'Wrong Answer', count: wrongCount },
+            { key: 'no_submit', label: 'No Submit', count: noSubmitCount },
+        ];
+
+        let activeFilter = 'all';
+        const filterBar = h('div', { className: 'filter-bar' });
+
+        function matchesFilter(entry) {
+            switch (activeFilter) {
+                case 'pass': return entry.passed;
+                case 'fail': return !entry.passed;
+                case 'timeout': return entry.failure_category === 'timeout';
+                case 'wrong_answer': return entry.failure_category === 'wrong_answer';
+                case 'no_submit': return entry.failure_category === 'no_submit';
+                default: return true;
+            }
         }
 
-        const table = h('table', null, thead, tbody);
-        const card = h('div', { className: 'card' },
-            h('div', { className: 'card-body table-wrap' }, table)
-        );
+        function renderFilterBar() {
+            filterBar.innerHTML = '';
+            for (const f of filters) {
+                if (f.count === 0 && f.key !== 'all') continue;
+                const btn = h('button', {
+                    className: `filter-btn${activeFilter === f.key ? ' active' : ''}`,
+                    onClick: () => { activeFilter = f.key; renderFilterBar(); renderTable(); }
+                }, f.label, h('span', { className: 'count' }, String(f.count)));
+                filterBar.appendChild(btn);
+            }
+        }
+
+        // Columns with sorting
+        const columns = [
+            { key: 'job_name', label: 'Run', sort: (a, b) => a.job_name.localeCompare(b.job_name) },
+            { key: 'passed', label: 'Result', sort: (a, b) => (b.passed ? 1 : 0) - (a.passed ? 1 : 0) },
+            { key: 'failure_category', label: 'Category', sort: (a, b) => (a.failure_category || '').localeCompare(b.failure_category || '') },
+            { key: 'task_started_at', label: 'Started', sort: (a, b) => (a.task_started_at || '').localeCompare(b.task_started_at || '') },
+            { key: 'total_rounds', label: 'Rounds', sort: (a, b) => (a.total_rounds || 0) - (b.total_rounds || 0), numeric: true },
+            { key: 'wasted_rounds', label: 'Wasted', sort: (a, b) => (a.wasted_rounds || 0) - (b.wasted_rounds || 0), numeric: true },
+            { key: 'total_tokens_in', label: 'Tokens', sort: (a, b) => (a.total_tokens_in || 0) - (b.total_tokens_in || 0), numeric: true },
+            { key: 'wall_time_sec', label: 'Wall Time', sort: (a, b) => (a.wall_time_sec || 0) - (b.wall_time_sec || 0), numeric: true },
+        ];
+
+        let sortColKey = null; // null = default backend order
+        let sortAsc = true;
+
+        function sortEntries(list) {
+            if (!sortColKey) return list;
+            const col = columns.find(c => c.key === sortColKey);
+            if (!col) return list;
+            return list.slice().sort((a, b) => {
+                const cmp = col.sort(a, b);
+                return sortAsc ? cmp : -cmp;
+            });
+        }
+
+        function toggleSort(colKey) {
+            if (sortColKey === colKey) {
+                sortAsc = !sortAsc;
+            } else {
+                sortColKey = colKey;
+                sortAsc = true;
+            }
+            renderTable();
+        }
+
+        function renderCell(entry, col) {
+            switch (col.key) {
+                case 'job_name':
+                    return h('a', {
+                        className: 'table-link',
+                        href: `#/runs/${encodeURIComponent(entry.job_name)}/tasks/${encodeURIComponent(taskName)}`
+                    }, entry.job_name);
+                case 'passed': {
+                    const dotClass = entry.passed ? 'pass' : failureDotClass(entry.failure_category);
+                    return h('span', { className: 'status-text' },
+                        h('span', { className: `status-dot ${dotClass}` }),
+                        entry.passed ? 'Pass' : 'Fail');
+                }
+                case 'failure_category':
+                    return document.createTextNode(failureCategoryLabel(entry.failure_category));
+                case 'task_started_at':
+                    return document.createTextNode(formatDate(entry.task_started_at));
+                case 'total_rounds':
+                    return document.createTextNode(String(entry.total_rounds || 0));
+                case 'wasted_rounds':
+                    return document.createTextNode(String(entry.wasted_rounds || 0));
+                case 'total_tokens_in':
+                    return document.createTextNode(formatTaskTokens(entry.total_tokens_in, entry.total_tokens_out));
+                case 'wall_time_sec':
+                    return document.createTextNode(formatWallTime(entry.wall_time_sec));
+            }
+        }
+
+        // Table container
+        const colCount = columns.length;
+        const tableCard = h('div', { className: 'card' });
+        const tableWrap = h('div', { className: 'card-body table-wrap' });
+        tableCard.appendChild(tableWrap);
+
+        function renderTable() {
+            const filtered = history.filter(matchesFilter);
+            let sorted;
+
+            // Apply grouping sort if active, then column sort within groups
+            if (historyGroupByLevels.length > 0 && !sortColKey) {
+                sorted = sortRunsForGroup(filtered, historyGroupByLevels);
+            } else if (sortColKey) {
+                sorted = sortEntries(filtered);
+            } else {
+                sorted = filtered;
+            }
+
+            const headerRow = h('tr');
+            for (const col of columns) {
+                const isSorted = sortColKey === col.key;
+                const thClass = 'sortable' + (isSorted ? ' sorted' : '');
+                const arrow = isSorted ? (sortAsc ? '\u2191' : '\u2193') : '\u2195';
+                const th = h('th', {
+                    className: thClass,
+                    onClick: () => { toggleSort(col.key); }
+                }, col.label, h('span', { className: 'sort-arrow' }, arrow));
+                headerRow.appendChild(th);
+            }
+            const thead = h('thead', null, headerRow);
+
+            const tbody = h('tbody');
+            let prevEntry = null;
+            let prevGroupKey = null;
+
+            if (historyGroupByLevels.length > 0) {
+                const currentKeys = new Array(historyGroupByLevels.length).fill(null);
+                for (const entry of sorted) {
+                    // Group headers
+                    let groupChanged = false;
+                    for (let depth = 0; depth < historyGroupByLevels.length; depth++) {
+                        const dim = historyGroupByLevels[depth];
+                        const key = getRunDimensionValue(entry, dim);
+                        if (key !== currentKeys[depth]) {
+                            currentKeys[depth] = key;
+                            groupChanged = true;
+                            for (let d = depth + 1; d < historyGroupByLevels.length; d++) {
+                                currentKeys[d] = null;
+                            }
+                            const groupEntries = sorted.filter(r => {
+                                for (let d = 0; d <= depth; d++) {
+                                    if (getRunDimensionValue(r, historyGroupByLevels[d]) !== currentKeys[d]) return false;
+                                }
+                                return true;
+                            });
+                            const groupPassed = groupEntries.filter(e => e.passed).length;
+                            const groupSummary = ` \u2014 ${groupPassed}/${groupEntries.length} pass`;
+                            const groupRow = h('tr', { className: `group-header-row depth-${depth}` },
+                                h('td', { colSpan: String(colCount) },
+                                    h('span', { className: 'group-label' }, key),
+                                    h('span', { className: 'group-summary' },
+                                        `${groupEntries.length} run${groupEntries.length !== 1 ? 's' : ''}${groupSummary}`)
+                                )
+                            );
+                            tbody.appendChild(groupRow);
+                        }
+                    }
+
+                    // Comparison highlight
+                    const groupKey = currentKeys.join('|');
+                    let rowClass = '';
+                    if (prevEntry && prevGroupKey === groupKey) {
+                        if (!prevEntry.passed && entry.passed) rowClass = 'history-improved';
+                        else if (prevEntry.passed && !entry.passed) rowClass = 'history-regressed';
+                    }
+
+                    const row = h('tr', rowClass ? { className: rowClass } : null);
+                    for (const col of columns) {
+                        const tdClass = col.numeric ? 'numeric' : null;
+                        const td = h('td', tdClass ? { className: tdClass } : null);
+                        td.appendChild(renderCell(entry, col));
+                        row.appendChild(td);
+                    }
+                    tbody.appendChild(row);
+                    prevEntry = entry;
+                    prevGroupKey = groupKey;
+                }
+            } else {
+                for (const entry of sorted) {
+                    // Comparison highlight (no grouping — all in one group)
+                    let rowClass = '';
+                    if (prevEntry) {
+                        if (!prevEntry.passed && entry.passed) rowClass = 'history-improved';
+                        else if (prevEntry.passed && !entry.passed) rowClass = 'history-regressed';
+                    }
+
+                    const row = h('tr', rowClass ? { className: rowClass } : null);
+                    for (const col of columns) {
+                        const tdClass = col.numeric ? 'numeric' : null;
+                        const td = h('td', tdClass ? { className: tdClass } : null);
+                        td.appendChild(renderCell(entry, col));
+                        row.appendChild(td);
+                    }
+                    tbody.appendChild(row);
+                    prevEntry = entry;
+                }
+            }
+
+            const table = h('table', null, thead, tbody);
+            tableWrap.innerHTML = '';
+            tableWrap.appendChild(table);
+        }
+
+        renderFilterBar();
+        renderTable();
 
         container.innerHTML = '';
         container.appendChild(header);
-        container.appendChild(card);
+        container.appendChild(filterBar);
+        container.appendChild(tableCard);
     } catch (err) {
         container.innerHTML = `<div class="error-msg">Failed to load history: ${escapeHtml(err.message)}</div>`;
     }
@@ -787,6 +1000,7 @@ async function renderRunDetail(container, jobName) {
             { key: 'task_name', label: 'Task', sort: (a, b) => a.task_name.localeCompare(b.task_name) },
             { key: 'passed', label: 'Result', sort: (a, b) => (b.passed ? 1 : 0) - (a.passed ? 1 : 0) },
             { key: 'failure_category', label: 'Category', sort: (a, b) => (a.failure_category || '').localeCompare(b.failure_category || '') },
+            { key: 'started_at', label: 'Started', sort: (a, b) => (a.started_at || '').localeCompare(b.started_at || '') },
             { key: 'total_rounds', label: 'Rounds', sort: (a, b) => (a.total_rounds || 0) - (b.total_rounds || 0), numeric: true },
             { key: 'wasted_rounds', label: 'Wasted', sort: (a, b) => (a.wasted_rounds || 0) - (b.wasted_rounds || 0), numeric: true },
             { key: 'total_tokens_in', label: 'Tokens', sort: (a, b) => (a.total_tokens_in || 0) - (b.total_tokens_in || 0), numeric: true },
@@ -882,6 +1096,8 @@ async function renderRunDetail(container, jobName) {
                 }
                 case 'failure_category':
                     return document.createTextNode(failureCategoryLabel(task.failure_category));
+                case 'started_at':
+                    return document.createTextNode(formatDate(task.started_at));
                 case 'total_rounds':
                     return document.createTextNode(String(task.total_rounds || 0));
                 case 'wasted_rounds':

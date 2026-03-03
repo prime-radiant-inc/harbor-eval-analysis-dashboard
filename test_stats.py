@@ -249,6 +249,13 @@ class TestTaskHistory:
         assert "wasted_rounds" in history[0]
         assert "wall_time_sec" in history[0]
 
+    def test_includes_run_metadata(self, harbor_job_dir):
+        store = RunStore(harbor_job_dir)
+        history = compute_task_history(store, "build-widget")
+        assert history[0]["model"] == "openai/gpt-5.3-codex"
+        assert history[0]["adapter"] == "harbor_agent:HarborAgent"
+        assert history[0]["started_at"] == "2026-03-01T12:00:00Z"
+
     def test_multiple_runs(self, harbor_job_dir):
         from conftest import _make_task, _passing_transcript
         # Create second run with same task

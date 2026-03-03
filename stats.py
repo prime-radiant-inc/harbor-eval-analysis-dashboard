@@ -320,6 +320,8 @@ def compute_task_history(store, task_name):
                 task_stats = compute_task_stats(store, job_name, task_name)
                 if task_stats is None:
                     continue
+                job_dir = store.data_dir / job_name
+                run_meta = store._read_run_metadata(job_dir)
                 entry = {
                     "job_name": job_name,
                     "passed": t["passed"],
@@ -329,8 +331,11 @@ def compute_task_history(store, task_name):
                     "total_tokens_in": task_stats["total_tokens_in"],
                     "total_tokens_out": task_stats["total_tokens_out"],
                     "wall_time_sec": task_stats.get("wall_time_sec"),
+                    "model": run_meta.get("model", ""),
+                    "adapter": run_meta.get("adapter", ""),
+                    "started_at": run_meta.get("started_at", ""),
+                    "task_started_at": t.get("started_at", ""),
                 }
-                job_dir = store.data_dir / job_name
                 try:
                     entry["_mtime"] = job_dir.stat().st_mtime
                 except OSError:

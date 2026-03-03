@@ -1048,6 +1048,10 @@ td.numeric {
     margin-right: 0;
 }
 
+/* Task history comparison highlights */
+tr.history-improved { border-left: 3px solid #18A34A; }
+tr.history-regressed { border-left: 3px solid #DC2626; }
+
 /* Multi-rep trial expand/collapse */
 .rep-toggle {
     display: inline-block;

@@ -369,7 +369,14 @@ class RunStore:
 
     def _classify_failure(self, reward, task_dir):
         """Classify failure category for a failing task."""
-        if reward is None or reward >= 1.0:
+        if reward is not None and reward >= 1.0:
+            return None
+
+        # exception.txt without reward means Harbor caught an error
+        if reward is None and (task_dir / "exception.txt").is_file():
+            return "error"
+
+        if reward is None:
             return None
 
         result = self._read_result_json(task_dir)
@@ -391,12 +398,16 @@ class RunStore:
         Harbor pre-writes result.json with started_at/finished_at at job
         launch, so those timestamps are unreliable for status. Instead:
             'pass'    — reward.txt exists and reward >= 1.0
-            'fail'    — reward.txt exists and reward < 1.0
+            'fail'    — reward.txt exists and reward < 1.0, OR
+                        exception.txt exists (task crashed/timed out)
             'running' — agent has written transcripts or stdout (no reward yet)
             'queued'  — task dir exists but no agent output
         """
         if reward is not None:
             return "pass" if reward >= 1.0 else "fail"
+        # exception.txt means Harbor caught an error — task is done
+        if (task_dir / "exception.txt").is_file():
+            return "fail"
         # Check for agent output as evidence the task actually started
         if self._find_transcript_files(task_dir):
             return "running"

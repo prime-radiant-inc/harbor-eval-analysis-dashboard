@@ -109,6 +109,7 @@ function failureCategoryLabel(cat) {
         case 'wrong_answer': return 'Wrong Answer';
         case 'no_submit': return 'No Submit';
         case 'api_error': return 'API Error';
+        case 'error': return 'Error';
         default: return cat || '';
     }
 }
@@ -682,6 +683,7 @@ async function renderTaskHistory(container, taskName) {
         const timeoutCount = history.filter(e => e.failure_category === 'timeout').length;
         const wrongCount = history.filter(e => e.failure_category === 'wrong_answer').length;
         const noSubmitCount = history.filter(e => e.failure_category === 'no_submit').length;
+        const errorCount = history.filter(e => e.failure_category === 'error').length;
 
         const filters = [
             { key: 'all', label: 'All', count: allCount },
@@ -690,6 +692,7 @@ async function renderTaskHistory(container, taskName) {
             { key: 'timeout', label: 'Timeout', count: timeoutCount },
             { key: 'wrong_answer', label: 'Wrong Answer', count: wrongCount },
             { key: 'no_submit', label: 'No Submit', count: noSubmitCount },
+            { key: 'error', label: 'Error', count: errorCount },
         ];
 
         let activeFilter = 'all';
@@ -702,6 +705,7 @@ async function renderTaskHistory(container, taskName) {
                 case 'timeout': return entry.failure_category === 'timeout';
                 case 'wrong_answer': return entry.failure_category === 'wrong_answer';
                 case 'no_submit': return entry.failure_category === 'no_submit';
+                case 'error': return entry.failure_category === 'error';
                 default: return true;
             }
         }
@@ -997,6 +1001,7 @@ async function renderRunDetail(container, jobName) {
         const timeoutCount = tasks.filter(t => t.failure_category === 'timeout').length;
         const wrongCount = tasks.filter(t => t.failure_category === 'wrong_answer').length;
         const noSubmitCount = tasks.filter(t => t.failure_category === 'no_submit').length;
+        const errorCount = tasks.filter(t => t.failure_category === 'error').length;
 
         const filters = [
             { key: 'all', label: 'All', count: allCount },
@@ -1005,6 +1010,7 @@ async function renderRunDetail(container, jobName) {
             { key: 'timeout', label: 'Timeout', count: timeoutCount },
             { key: 'wrong_answer', label: 'Wrong Answer', count: wrongCount },
             { key: 'no_submit', label: 'No Submit', count: noSubmitCount },
+            { key: 'error', label: 'Error', count: errorCount },
         ];
 
         let activeFilter = 'all';
@@ -1038,6 +1044,7 @@ async function renderRunDetail(container, jobName) {
                 case 'timeout': return task.failure_category === 'timeout';
                 case 'wrong_answer': return task.failure_category === 'wrong_answer';
                 case 'no_submit': return task.failure_category === 'no_submit';
+                case 'error': return task.failure_category === 'error';
                 default: return true;
             }
         }

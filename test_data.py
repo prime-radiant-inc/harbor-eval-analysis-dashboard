@@ -320,6 +320,37 @@ class TestTaskStatus:
         tasks = store.list_tasks("bare-run")
         assert tasks[0]["status"] == "queued"
 
+    def test_exception_with_transcripts_is_fail(self, tmp_path):
+        """Task with exception.txt but no reward is fail, not running."""
+        job_root = tmp_path / "crashed-run"
+        task = job_root / "crashed-task__aaa111"
+        task.mkdir(parents=True)
+        (task / "exception.txt").write_text(
+            "Traceback ...\nasyncio.exceptions.CancelledError\n")
+        sessions = task / "agent" / "agent-state" / "sessions"
+        sessions.mkdir(parents=True)
+        (sessions / "sess.transcript.jsonl").write_text(
+            json.dumps({"kind": "header", "format_version": 1,
+                         "session_id": "s1", "model": "x", "depth": 0}) + "\n")
+
+        store = RunStore(tmp_path)
+        tasks = store.list_tasks("crashed-run")
+        assert tasks[0]["status"] == "fail"
+        assert tasks[0]["passed"] is False
+
+    def test_exception_without_transcripts_is_fail(self, tmp_path):
+        """Task with exception.txt and no agent output is fail, not queued."""
+        job_root = tmp_path / "crashed-run"
+        task = job_root / "crashed-task__aaa111"
+        task.mkdir(parents=True)
+        (task / "exception.txt").write_text(
+            "Traceback ...\nRuntimeError: setup failed\n")
+
+        store = RunStore(tmp_path)
+        tasks = store.list_tasks("crashed-run")
+        assert tasks[0]["status"] == "fail"
+        assert tasks[0]["passed"] is False
+
     def test_queued_empty_stdout(self, tmp_path):
         """Task with empty stdout (no real output) is queued."""
         job_root = tmp_path / "bare-run"
@@ -414,6 +445,18 @@ class TestFailureClassification:
         store = RunStore(tmp_path)
         tasks = store.list_tasks("error-run")
         assert tasks[0]["failure_category"] == "api_error"
+
+    def test_exception_file_is_error(self, tmp_path):
+        """Task with exception.txt (no reward) -> error category."""
+        job_root = tmp_path / "exc-run"
+        task_dir = job_root / "exc-task__aaa111"
+        task_dir.mkdir(parents=True)
+        (task_dir / "exception.txt").write_text(
+            "Traceback ...\nasyncio.exceptions.CancelledError\n")
+
+        store = RunStore(tmp_path)
+        tasks = store.list_tasks("exc-run")
+        assert tasks[0]["failure_category"] == "error"
 
     def test_no_submit(self, tmp_path):
         """No markers at all -> no_submit."""

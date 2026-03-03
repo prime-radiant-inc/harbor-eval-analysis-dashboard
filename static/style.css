@@ -574,6 +574,14 @@ a.table-link:hover {
     flex-shrink: 0;
 }
 
+.round-timestamp {
+    font-size: 11px;
+    color: #A0A0A0;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+
 /* Expanded round detail */
 .round-detail {
     display: none;

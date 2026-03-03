@@ -157,6 +157,14 @@ function formatDate(isoStr) {
     } catch { return '-'; }
 }
 
+function formatTime(isoStr) {
+    if (!isoStr) return '';
+    try {
+        const d = new Date(isoStr);
+        return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    } catch { return ''; }
+}
+
 function stripProviderPrefix(model) {
     if (!model) return '-';
     const idx = model.indexOf('/');
@@ -1779,6 +1787,11 @@ function renderRound(round) {
 
     if (tokens) {
         headerItems.push(h('span', { className: 'round-tokens' }, tokens));
+    }
+
+    const ts = formatTime(round.timestamp);
+    if (ts) {
+        headerItems.push(h('span', { className: 'round-timestamp' }, ts));
     }
 
     el.appendChild(h('div', { className: 'round-header' }, ...headerItems));

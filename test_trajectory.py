@@ -386,6 +386,45 @@ class TestBuildTrajectory:
         assert "ls -la /app" in rounds[0]["summary"]
 
 
+class TestTimestamps:
+    """Timestamps are extracted from transcript entries."""
+
+    def _make_session(self, entries):
+        return {
+            "session_id": "test-sess",
+            "model": "gpt-5.3-codex",
+            "depth": 0,
+            "entries": entries,
+        }
+
+    def test_timestamp_from_assistant_entry(self):
+        entries = [
+            {"kind": "entry", "seq": 0, "turn": {
+                "kind": "ASSISTANT",
+                "message": {"role": "assistant", "content": [
+                    {"kind": "text", "text": "Thinking..."},
+                ]},
+                "timestamp": "2026-03-01T12:00:02Z",
+                "usage": {"input_tokens": 100, "output_tokens": 20},
+            }},
+        ]
+        rounds = build_trajectory(self._make_session(entries))
+        assert rounds[0]["timestamp"] == "2026-03-01T12:00:02Z"
+
+    def test_missing_timestamp_returns_none(self):
+        entries = [
+            {"kind": "entry", "seq": 0, "turn": {
+                "kind": "ASSISTANT",
+                "message": {"role": "assistant", "content": [
+                    {"kind": "text", "text": "No timestamp here."},
+                ]},
+                "usage": {"input_tokens": 100, "output_tokens": 20},
+            }},
+        ]
+        rounds = build_trajectory(self._make_session(entries))
+        assert rounds[0]["timestamp"] is None
+
+
 class TestSummaryGeneration:
     """Round summaries are generated based on action type."""
 

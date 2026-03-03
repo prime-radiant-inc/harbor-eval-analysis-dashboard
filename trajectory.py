@@ -150,6 +150,7 @@ def build_trajectory(session):
             "text": text,
             "usage": usage,
             "duration_ms": duration_ms,
+            "timestamp": turn.get("timestamp"),
             "raw_entries": raw_entries,
         })
 

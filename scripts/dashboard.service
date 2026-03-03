@@ -1,0 +1,14 @@
+[Unit]
+Description=Harbor Eval Analysis Dashboard
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/harbor-eval-analysis-dashboard
+ExecStart=/opt/harbor-eval-analysis-dashboard/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 6060
+Restart=on-failure
+RestartSec=5
+Environment=DASHBOARD_DATA_DIR=/data/serf-evals/runs
+
+[Install]
+WantedBy=multi-user.target

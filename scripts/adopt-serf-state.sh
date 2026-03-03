@@ -6,7 +6,7 @@
 # relative symlinks. Re-runnable — skips directories that already have
 # an agent-state link or directory.
 #
-# Usage: ./scripts/adopt-serf-state.sh /data/serf-evals/runs
+# Usage: ./scripts/adopt-serf-state.sh /data/agent-evals/runs
 
 set -euo pipefail
 

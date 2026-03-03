@@ -10,7 +10,7 @@ git pull --ff-only
 .venv/bin/pip install -q -r requirements.txt
 
 # Adopt any new serf-state dirs from recent eval runs
-./scripts/adopt-serf-state.sh /data/serf-evals/runs
+./scripts/adopt-serf-state.sh /data/agent-evals/runs
 
 sudo systemctl restart dashboard
 echo "Dashboard updated and restarted."

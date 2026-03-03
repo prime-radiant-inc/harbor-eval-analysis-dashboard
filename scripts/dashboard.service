@@ -8,7 +8,7 @@ WorkingDirectory=/opt/harbor-eval-analysis-dashboard
 ExecStart=/opt/harbor-eval-analysis-dashboard/.venv/bin/uvicorn server:app --host 127.0.0.1 --port 6060
 Restart=on-failure
 RestartSec=5
-Environment=DASHBOARD_DATA_DIR=/data/serf-evals/runs
+Environment=DASHBOARD_DATA_DIR=/data/agent-evals/runs
 
 [Install]
 WantedBy=multi-user.target

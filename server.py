@@ -6,6 +6,8 @@ Markdown by default. Send Accept: application/json for JSON.
 import html as html_mod
 import json
 import os
+import re
+import subprocess
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -25,6 +27,73 @@ store = RunStore(_data_dir)
 _cache_dir = os.path.join(_data_dir, ".cache")
 
 
+def _parse_container_name(name):
+    """Parse a docker compose container name into (task_name, hash).
+
+    Container names look like "task-name__hash-main-1" where the "-main-N"
+    suffix is added by docker compose.  Returns None if the name doesn't
+    contain a double-underscore separator.
+    """
+    # Strip docker compose replica suffix (-main-N)
+    stripped = re.sub(r"-main-\d+$", "", name)
+    if "__" not in stripped:
+        return None
+    idx = stripped.rfind("__")
+    return (stripped[:idx], stripped[idx + 2:])
+
+
+def _build_task_dir_index(store):
+    """Build a {lowered_dir_name: job_name} index by scanning data_dir.
+
+    Scans each job directory for task__hash subdirectories and maps
+    lowercased dir names to their parent job name, allowing container
+    names to be mapped to runs.
+    """
+    index = {}
+    if not store.data_dir.is_dir():
+        return index
+    for job_dir in store.data_dir.iterdir():
+        if not job_dir.is_dir():
+            continue
+        for td in job_dir.iterdir():
+            if td.is_dir() and "__" in td.name:
+                index[td.name.lower()] = job_dir.name
+    return index
+
+
+def _parse_orchestrators(ps_output):
+    """Parse 'ps' output for harbor run processes.
+
+    Extracts pid, --job-name, --model, and --agent-import-path from each
+    line containing 'harbor run'.
+    """
+    orchestrators = []
+    for line in ps_output.strip().splitlines():
+        if "harbor run" not in line:
+            continue
+        parts = line.split()
+        if not parts:
+            continue
+        pid = parts[0]
+        job_name = ""
+        model = ""
+        agent = ""
+        for i, token in enumerate(parts):
+            if token == "--job-name" and i + 1 < len(parts):
+                job_name = parts[i + 1]
+            elif token == "--model" and i + 1 < len(parts):
+                model = parts[i + 1]
+            elif token == "--agent-import-path" and i + 1 < len(parts):
+                agent = parts[i + 1]
+        orchestrators.append({
+            "pid": pid,
+            "job_name": job_name,
+            "model": model,
+            "agent": agent,
+        })
+    return orchestrators
+
+
 def _wants_json(request: Request) -> bool:
     accept = request.headers.get("accept", "")
     return "application/json" in accept
@@ -37,6 +106,58 @@ def _md_response(content: str) -> PlainTextResponse:
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.get("/api/containers")
+def list_containers():
+    """List running docker containers and harbor orchestrator processes."""
+    # Docker containers filtered to harbor task containers (name contains __)
+    containers = []
+    try:
+        result = subprocess.run(
+            ["docker", "ps", "--filter", "name=__",
+             "--format", "{{.Names}}\t{{.CreatedAt}}\t{{.Status}}"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            dir_index = _build_task_dir_index(store)
+            for line in result.stdout.strip().splitlines():
+                if not line:
+                    continue
+                parts = line.split("\t")
+                if len(parts) < 3:
+                    continue
+                container_name, created_at, status = parts[0], parts[1], parts[2]
+                parsed = _parse_container_name(container_name)
+                if parsed is None:
+                    continue
+                task_name, hash_val = parsed
+                lookup_key = f"{task_name}__{hash_val}".lower()
+                job_name = dir_index.get(lookup_key, "")
+                containers.append({
+                    "container_name": container_name,
+                    "task_name": task_name,
+                    "hash": hash_val,
+                    "job_name": job_name,
+                    "created_at": created_at,
+                    "status": status,
+                })
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    # Harbor orchestrator processes
+    orchestrators = []
+    try:
+        result = subprocess.run(
+            ["ps", "axo", "pid,args"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if result.returncode == 0:
+            orchestrators = _parse_orchestrators(result.stdout)
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        pass
+
+    return JSONResponse({"containers": containers, "orchestrators": orchestrators})
 
 
 @app.get("/api/runs")

@@ -439,3 +439,168 @@ class TestArtifactEndpoint:
             headers={"Accept": "application/json"},
         )
         assert resp.status_code == 404
+
+
+class TestParseContainerName:
+    """Tests for _parse_container_name helper."""
+
+    def test_standard_compose_name(self):
+        from server import _parse_container_name
+        result = _parse_container_name("gpt2-codegolf__l3yrkse-main-1")
+        assert result == ("gpt2-codegolf", "l3yrkse")
+
+    def test_multi_segment_task_name(self):
+        from server import _parse_container_name
+        result = _parse_container_name("my-complex-task__abc1234-main-1")
+        assert result == ("my-complex-task", "abc1234")
+
+    def test_no_double_underscore(self):
+        """Non-harbor containers (no __) should return None."""
+        from server import _parse_container_name
+        result = _parse_container_name("redis-server-main-1")
+        assert result is None
+
+    def test_no_main_suffix(self):
+        """Container name with __ but no -main-N suffix still parses."""
+        from server import _parse_container_name
+        result = _parse_container_name("task__hash")
+        assert result == ("task", "hash")
+
+    def test_main_suffix_with_higher_replica(self):
+        from server import _parse_container_name
+        result = _parse_container_name("task__hash-main-2")
+        assert result == ("task", "hash")
+
+
+class TestBuildTaskDirIndex:
+    """Tests for _build_task_dir_index helper."""
+
+    def test_maps_container_to_job(self, harbor_job_dir):
+        from server import _build_task_dir_index
+        store = RunStore(harbor_job_dir)
+        index = _build_task_dir_index(store)
+        # full-test/build-widget__abc123 should map to "full-test"
+        assert index.get("build-widget__abc123") == "full-test"
+        assert index.get("fix-bug__def456") == "full-test"
+
+    def test_case_insensitive_lookup(self, harbor_job_dir):
+        from server import _build_task_dir_index
+        store = RunStore(harbor_job_dir)
+        index = _build_task_dir_index(store)
+        # Keys should be lowercased
+        assert "build-widget__abc123" in index
+
+    def test_empty_data_dir(self, tmp_path):
+        from server import _build_task_dir_index
+        store = RunStore(tmp_path)
+        index = _build_task_dir_index(store)
+        assert index == {}
+
+
+class TestContainersEndpoint:
+    """Tests for GET /api/containers."""
+
+    def test_containers_response_shape(self, harbor_job_dir, monkeypatch):
+        """Endpoint returns containers and orchestrators lists."""
+        import subprocess
+        docker_output = (
+            "gpt2-codegolf__l3yrkse-main-1\t"
+            "2026-03-04 00:09:45 +0000 UTC\t"
+            "Up 5 minutes"
+        )
+        ps_output = ""  # no orchestrators
+
+        def mock_run(cmd, **kwargs):
+            if cmd[0] == "docker":
+                return subprocess.CompletedProcess(cmd, 0, stdout=docker_output, stderr="")
+            if cmd[0] == "ps":
+                return subprocess.CompletedProcess(cmd, 0, stdout=ps_output, stderr="")
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        client = _make_client(harbor_job_dir)
+        resp = client.get("/api/containers",
+                          headers={"Accept": "application/json"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "containers" in data
+        assert "orchestrators" in data
+        assert len(data["containers"]) == 1
+        c = data["containers"][0]
+        assert c["task_name"] == "gpt2-codegolf"
+        assert c["hash"] == "l3yrkse"
+        assert c["status"] == "Up 5 minutes"
+        assert c["created_at"] == "2026-03-04 00:09:45 +0000 UTC"
+
+    def test_containers_maps_to_job(self, harbor_job_dir, monkeypatch):
+        """Container whose task+hash matches a directory gets job_name."""
+        import subprocess
+        # build-widget__abc123 exists in the fixture
+        docker_output = (
+            "build-widget__abc123-main-1\t"
+            "2026-03-04 00:09:45 +0000 UTC\t"
+            "Up 2 minutes"
+        )
+        ps_output = ""
+
+        def mock_run(cmd, **kwargs):
+            if cmd[0] == "docker":
+                return subprocess.CompletedProcess(cmd, 0, stdout=docker_output, stderr="")
+            if cmd[0] == "ps":
+                return subprocess.CompletedProcess(cmd, 0, stdout=ps_output, stderr="")
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        client = _make_client(harbor_job_dir)
+        resp = client.get("/api/containers",
+                          headers={"Accept": "application/json"})
+        data = resp.json()
+        assert data["containers"][0]["job_name"] == "full-test"
+
+    def test_containers_docker_unavailable(self, harbor_job_dir, monkeypatch):
+        """When docker is not installed, return empty containers list."""
+        import subprocess
+
+        def mock_run(cmd, **kwargs):
+            if cmd[0] == "docker":
+                raise FileNotFoundError("docker not found")
+            if cmd[0] == "ps":
+                return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        client = _make_client(harbor_job_dir)
+        resp = client.get("/api/containers",
+                          headers={"Accept": "application/json"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["containers"] == []
+
+    def test_containers_orchestrators(self, harbor_job_dir, monkeypatch):
+        """Orchestrator processes are parsed from ps output."""
+        import subprocess
+        docker_output = ""
+        ps_output = (
+            "1042474 harbor run --job-name serf_gpt-5.3-codex_high_c8ee6b9_20260304_1 "
+            "--model openai/gpt-5.3-codex --agent-import-path serf_agent:SerfAgent "
+            "--other-flags\n"
+        )
+
+        def mock_run(cmd, **kwargs):
+            if cmd[0] == "docker":
+                return subprocess.CompletedProcess(cmd, 0, stdout=docker_output, stderr="")
+            if cmd[0] == "ps":
+                return subprocess.CompletedProcess(cmd, 0, stdout=ps_output, stderr="")
+            return subprocess.CompletedProcess(cmd, 1, stdout="", stderr="")
+
+        monkeypatch.setattr(subprocess, "run", mock_run)
+        client = _make_client(harbor_job_dir)
+        resp = client.get("/api/containers",
+                          headers={"Accept": "application/json"})
+        data = resp.json()
+        assert len(data["orchestrators"]) == 1
+        o = data["orchestrators"][0]
+        assert o["pid"] == "1042474"
+        assert o["job_name"] == "serf_gpt-5.3-codex_high_c8ee6b9_20260304_1"
+        assert o["model"] == "openai/gpt-5.3-codex"
+        assert o["agent"] == "serf_agent:SerfAgent"

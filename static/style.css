@@ -1222,3 +1222,15 @@ tr.history-regressed { border-left: 3px solid #DC2626; }
     font-size: 12px;
     color: #A0A0A0;
 }
+
+/* --------------------------------------------------------
+   Active containers page
+   -------------------------------------------------------- */
+.auto-refresh-label {
+    font-size: 12px;
+    color: #A0A0A0;
+}
+
+.muted {
+    color: #A0A0A0;
+}

@@ -14,9 +14,17 @@ async function fetchJSON(url) {
 // Router
 // ---------------------------------------------------------------------------
 
+let containersTimer = null;
+
 function route() {
     const hash = location.hash || '#/';
     const app = document.getElementById('app');
+
+    // Stop containers auto-refresh when navigating away
+    if (containersTimer) {
+        clearInterval(containersTimer);
+        containersTimer = null;
+    }
 
     let m;
     if ((m = hash.match(/^#\/tasks\/([^/]+)\/history$/))) {
@@ -27,6 +35,8 @@ function route() {
         renderRunDetail(app, decodeURIComponent(m[1]));
     } else if ((m = hash.match(/^#\/compare$/))) {
         renderComparison(app);
+    } else if ((m = hash.match(/^#\/containers$/))) {
+        renderContainers(app);
     } else {
         renderDashboard(app);
     }
@@ -357,6 +367,7 @@ async function renderDashboard(container) {
         }
 
         const compareLink = h('a', { href: '#/compare', className: 'compare-nav-link' }, 'Compare runs');
+        const containersLink = h('a', { href: '#/containers', className: 'compare-nav-link' }, 'Active containers');
 
         // Build pill buttons for hierarchical grouping
         const pillBar = h('span', { className: 'group-pills' });
@@ -385,7 +396,7 @@ async function renderDashboard(container) {
         rebuildPills();
 
         const header = h('div', { className: 'page-header' },
-            h('h1', null, 'Eval Runs', compareLink),
+            h('h1', null, 'Eval Runs', compareLink, containersLink),
             h('div', { className: 'subtitle' }, `${runs.length} run${runs.length !== 1 ? 's' : ''}`, pillBar)
         );
 
@@ -1899,4 +1910,151 @@ function renderToolCall(tc, tr) {
     }
 
     return block;
+}
+
+// ---------------------------------------------------------------------------
+// Active containers view
+// ---------------------------------------------------------------------------
+
+async function renderContainers(container) {
+    setBreadcrumb([
+        { label: 'Dashboard', href: '#/' },
+        { label: 'Active Containers' },
+    ]);
+    container.innerHTML = '<div class="loading">Loading containers...</div>';
+
+    async function refresh() {
+        try {
+            const data = await fetchJSON('/api/containers');
+            renderContainersData(container, data);
+        } catch (e) {
+            container.innerHTML = `<div class="error-msg">Failed to load containers: ${escapeHtml(e.message)}</div>`;
+        }
+    }
+
+    await refresh();
+    containersTimer = setInterval(refresh, 10000);
+}
+
+function renderContainersData(container, data) {
+    const containers = data.containers || [];
+    const orchestrators = data.orchestrators || [];
+
+    const header = h('div', { className: 'page-header' },
+        h('h1', null, 'Active Containers'),
+        h('div', { className: 'subtitle' },
+            `${containers.length} container${containers.length !== 1 ? 's' : ''} running`,
+            h('span', { className: 'auto-refresh-label' }, ' \u00B7 auto-refreshes every 10s')
+        )
+    );
+
+    // Containers table
+    let containersCard;
+    if (containers.length === 0) {
+        containersCard = h('div', { className: 'card' },
+            h('div', { className: 'card-header' },
+                h('span', { className: 'card-title' }, 'Containers')
+            ),
+            h('div', { className: 'card-body' },
+                h('div', { className: 'empty-state' }, 'No task containers running.')
+            )
+        );
+    } else {
+        const thead = h('thead', null,
+            h('tr', null,
+                h('th', null, 'Task'),
+                h('th', null, 'Run'),
+                h('th', null, 'Status'),
+                h('th', null, 'Started')
+            )
+        );
+        const tbody = h('tbody');
+        for (const c of containers) {
+            const taskCell = h('td');
+            const dot = h('span', { className: 'status-dot running' });
+            if (c.job_name) {
+                const taskLink = h('a', {
+                    className: 'table-link',
+                    href: `#/runs/${encodeURIComponent(c.job_name)}/tasks/${encodeURIComponent(c.task_name)}`
+                }, c.task_name);
+                taskCell.appendChild(dot);
+                taskCell.appendChild(taskLink);
+            } else {
+                taskCell.appendChild(dot);
+                taskCell.appendChild(document.createTextNode(c.task_name));
+            }
+
+            const runCell = h('td');
+            if (c.job_name) {
+                runCell.appendChild(h('a', {
+                    className: 'table-link',
+                    href: `#/runs/${encodeURIComponent(c.job_name)}`
+                }, c.job_name));
+            } else {
+                runCell.appendChild(h('span', { className: 'muted' }, '\u2014'));
+            }
+
+            const row = h('tr', null,
+                taskCell,
+                runCell,
+                h('td', null, c.status),
+                h('td', null, c.created_at)
+            );
+            tbody.appendChild(row);
+        }
+
+        containersCard = h('div', { className: 'card' },
+            h('div', { className: 'card-header' },
+                h('span', { className: 'card-title' }, 'Containers')
+            ),
+            h('div', { className: 'card-body-flush' },
+                h('div', { className: 'table-wrap' },
+                    h('table', null, thead, tbody)
+                )
+            )
+        );
+    }
+
+    // Orchestrators section
+    let orchestratorsCard = null;
+    if (orchestrators.length > 0) {
+        const oThead = h('thead', null,
+            h('tr', null,
+                h('th', null, 'Job Name'),
+                h('th', null, 'Model'),
+                h('th', null, 'Agent'),
+                h('th', null, 'PID')
+            )
+        );
+        const oTbody = h('tbody');
+        for (const o of orchestrators) {
+            const row = h('tr', null,
+                h('td', null, h('a', {
+                    className: 'table-link',
+                    href: `#/runs/${encodeURIComponent(o.job_name)}`
+                }, o.job_name)),
+                h('td', null, o.model),
+                h('td', null, o.agent),
+                h('td', null, o.pid)
+            );
+            oTbody.appendChild(row);
+        }
+        orchestratorsCard = h('div', { className: 'card' },
+            h('div', { className: 'card-header' },
+                h('span', { className: 'card-title' }, 'Harbor Orchestrators')
+            ),
+            h('div', { className: 'card-body-flush' },
+                h('div', { className: 'table-wrap' },
+                    h('table', null, oThead, oTbody)
+                )
+            )
+        );
+    }
+
+    container.innerHTML = '';
+    container.appendChild(header);
+    container.appendChild(containersCard);
+    if (orchestratorsCard) {
+        container.appendChild(orchestratorsCard);
+    }
 }

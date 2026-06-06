@@ -1,0 +1,14 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: harbor-eval-analysis-dashboard
+  description: "Internal Python dashboard for visualizing Harbor eval runs: browse runs, inspect per-task results, view agent trajectories, and compare runs."
+  annotations:
+    backstage.io/techdocs-ref: dir:.
+    prime-radiant.com/repo-map-rev: "18b62425a81ee1cadb1908bf7b1a910efa5eb4cd"
+  tags: [python, dashboard, evals, agent-evaluation, llm]
+spec:
+  type: tool
+  lifecycle: production
+  owner: user:obra
+  system: eval-labs
